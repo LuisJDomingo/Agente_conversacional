@@ -122,3 +122,68 @@ def test_can_send_now_enforces_min_interval(monkeypatch):
     assert whatsapp._can_send_now("34600111222", now_ts=100.0) is True
     assert whatsapp._can_send_now("34600111222", now_ts=101.0) is False
     assert whatsapp._can_send_now("34600111222", now_ts=103.0) is True
+
+
+def test_whatsapp_webhook_rejects_invalid_token(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setattr(whatsapp, "WEBHOOK_VERIFY_TOKEN", "super-secret")
+
+    payload = {
+        "instance": "BookingAgent",
+        "webhook": "http://example.com",
+        "event": "messages.upsert",
+        "data": {"messages": []},
+    }
+
+    response = client.post("/whatsapp/webhook", json=payload, headers={"x-webhook-token": "wrong"})
+
+    assert response.status_code == 401
+
+
+def test_whatsapp_webhook_accepts_valid_token(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setattr(whatsapp, "WEBHOOK_VERIFY_TOKEN", "super-secret")
+
+    payload = {
+        "instance": "BookingAgent",
+        "webhook": "http://example.com",
+        "event": "messages.update",
+        "data": {"messages": []},
+    }
+
+    response = client.post("/whatsapp/webhook", json=payload, headers={"x-webhook-token": "super-secret"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ignored"
+
+
+def test_can_send_now_uses_redis_when_available(monkeypatch):
+    class FakeRedis:
+        def __init__(self):
+            self.calls = 0
+
+        def set(self, key, value, ex=None, nx=None):
+            self.calls += 1
+            # Primera llamada permite, segunda bloquea
+            return self.calls == 1
+
+    fake = FakeRedis()
+    monkeypatch.setattr(whatsapp, "_redis_client", fake)
+
+    assert whatsapp._can_send_now("34600111222", now_ts=100.0) is True
+    assert whatsapp._can_send_now("34600111222", now_ts=101.0) is False
+
+
+def test_can_send_now_fallbacks_to_memory_if_redis_fails(monkeypatch):
+    class BrokenRedis:
+        def set(self, *args, **kwargs):
+            raise RuntimeError("redis down")
+
+    monkeypatch.setattr(whatsapp, "_redis_client", BrokenRedis())
+    monkeypatch.setattr(whatsapp, "WHATSAPP_MIN_SECONDS_BETWEEN_MESSAGES", 2.5)
+    whatsapp._last_sent_by_number.clear()
+
+    assert whatsapp._can_send_now("34600999888", now_ts=200.0) is True
+    assert whatsapp._can_send_now("34600999888", now_ts=201.0) is False
