@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import os
 import httpx
+import random
+import time
 from app.services.llm_agent import handle_chat
 
 router = APIRouter()
@@ -11,19 +13,61 @@ EVOLUTION_API_BASE_URL = os.getenv("EVOLUTION_API_BASE_URL")
 EVOLUTION_INSTANCE_NAME = os.getenv("EVOLUTION_INSTANCE_NAME")
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY")
 
+# Anti-automatización para MVP: delay variable + límite por contacto.
+WHATSAPP_MIN_DELAY_MS = int(os.getenv("WHATSAPP_MIN_DELAY_MS", "900"))
+WHATSAPP_MAX_DELAY_MS = int(os.getenv("WHATSAPP_MAX_DELAY_MS", "2800"))
+WHATSAPP_MIN_SECONDS_BETWEEN_MESSAGES = float(os.getenv("WHATSAPP_MIN_SECONDS_BETWEEN_MESSAGES", "2.5"))
+
+# Registro en memoria del último envío por número.
+_last_sent_by_number: Dict[str, float] = {}
+
+
+def _compute_human_delay_ms(message: str) -> int:
+    """
+    Calcula un delay pseudo-humano basado en longitud del texto y jitter.
+    """
+    text = (message or "").strip()
+    # Base por longitud: aprox 15 ms por carácter + ruido.
+    length_factor = max(0, len(text)) * 15
+    jitter = random.randint(120, 650)
+    delay = WHATSAPP_MIN_DELAY_MS + length_factor + jitter
+    return max(WHATSAPP_MIN_DELAY_MS, min(delay, WHATSAPP_MAX_DELAY_MS))
+
+
+def _can_send_now(phone_number: str, now_ts: Optional[float] = None) -> bool:
+    """
+    Controla la cadencia mínima de mensajes por contacto.
+    """
+    now_ts = now_ts if now_ts is not None else time.time()
+    last_sent = _last_sent_by_number.get(phone_number)
+    if last_sent is None:
+        _last_sent_by_number[phone_number] = now_ts
+        return True
+
+    if (now_ts - last_sent) < WHATSAPP_MIN_SECONDS_BETWEEN_MESSAGES:
+        return False
+
+    _last_sent_by_number[phone_number] = now_ts
+    return True
+
 async def send_whatsapp_message(phone_number: str, message: str):
     if not EVOLUTION_API_BASE_URL or not EVOLUTION_INSTANCE_NAME or not EVOLUTION_API_KEY:
         print("Error: Missing Evolution API configuration.")
         return
 
+    if not _can_send_now(phone_number):
+        print(f"Rate limit local activado para {phone_number}. Se omite envío para evitar patrón automático.")
+        return
+
     url = f"{EVOLUTION_API_BASE_URL}/message/sendText/{EVOLUTION_INSTANCE_NAME}"
+    adaptive_delay = _compute_human_delay_ms(message)
     headers = {
         "Content-Type": "application/json",
         "apikey": EVOLUTION_API_KEY
     }
     payload = {
         "number": phone_number,
-        "options": {"delay": 1200},
+        "options": {"delay": adaptive_delay},
         "textMessage": {"text": message}
     }
     async with httpx.AsyncClient() as client:

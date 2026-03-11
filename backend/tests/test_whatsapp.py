@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.api import whatsapp
 
 
 def test_whatsapp_webhook_ignores_other_events():
@@ -103,3 +104,21 @@ def test_whatsapp_webhook_skips_messages_from_bot(monkeypatch):
     assert response.json()["status"] == "success"
     assert called["chat"] is False
     assert called["send"] is False
+
+
+def test_compute_human_delay_is_within_bounds(monkeypatch):
+    monkeypatch.setattr(whatsapp, "WHATSAPP_MIN_DELAY_MS", 900)
+    monkeypatch.setattr(whatsapp, "WHATSAPP_MAX_DELAY_MS", 1500)
+
+    delay = whatsapp._compute_human_delay_ms("Mensaje breve")
+
+    assert 900 <= delay <= 1500
+
+
+def test_can_send_now_enforces_min_interval(monkeypatch):
+    monkeypatch.setattr(whatsapp, "WHATSAPP_MIN_SECONDS_BETWEEN_MESSAGES", 2.5)
+    whatsapp._last_sent_by_number.clear()
+
+    assert whatsapp._can_send_now("34600111222", now_ts=100.0) is True
+    assert whatsapp._can_send_now("34600111222", now_ts=101.0) is False
+    assert whatsapp._can_send_now("34600111222", now_ts=103.0) is True

@@ -14,6 +14,9 @@ Revisa `docker-compose.yml` y ajusta, como mínimo:
 - `EVOLUTION_API_KEY`
 - `EVOLUTION_INSTANCE_NAME`
 - `OLLAMA_MODEL`
+- `WHATSAPP_MIN_DELAY_MS` (ej. 900)
+- `WHATSAPP_MAX_DELAY_MS` (ej. 2800)
+- `WHATSAPP_MIN_SECONDS_BETWEEN_MESSAGES` (ej. 2.5)
 - Credenciales SMTP en backend (si quieres correos reales).
 
 > Nota: actualmente el backend usa SQLite local (`bookings.db`) desde código. Si quieres PostgreSQL real para reservas del backend, hay que adaptar `backend/app/database.py` para leer `DATABASE_URL`.
