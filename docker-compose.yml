@@ -41,7 +41,7 @@ services:
       DATABASE_CONNECTION_URI: postgresql://user:password@booking_postgres:5432/booking_agent
       SERVER_URL: http://booking_evolution_api:8080
       AUTHENTICATION_TYPE: apikey
-      AUTHENTICATION_API_KEY: ClaveSecretaDelAgente123!
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-change-me}
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: "redis://booking_redis:6379"
     volumes:
@@ -67,10 +67,11 @@ services:
       OLLAMA_MODEL: tinyllama
       EVOLUTION_API_BASE_URL: http://booking_evolution_api:8080
       EVOLUTION_INSTANCE_NAME: BookingAgent
-      EVOLUTION_API_KEY: ClaveSecretaDelAgente123!
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-change-me}
+      EVOLUTION_WEBHOOK_VERIFY_TOKEN: ${EVOLUTION_WEBHOOK_VERIFY_TOKEN:-}
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     depends_on:
       - postgres
       - redis

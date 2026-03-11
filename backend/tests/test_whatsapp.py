@@ -122,3 +122,38 @@ def test_can_send_now_enforces_min_interval(monkeypatch):
     assert whatsapp._can_send_now("34600111222", now_ts=100.0) is True
     assert whatsapp._can_send_now("34600111222", now_ts=101.0) is False
     assert whatsapp._can_send_now("34600111222", now_ts=103.0) is True
+
+
+def test_whatsapp_webhook_rejects_invalid_token(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setattr(whatsapp, "WEBHOOK_VERIFY_TOKEN", "super-secret")
+
+    payload = {
+        "instance": "BookingAgent",
+        "webhook": "http://example.com",
+        "event": "messages.upsert",
+        "data": {"messages": []},
+    }
+
+    response = client.post("/whatsapp/webhook", json=payload, headers={"x-webhook-token": "wrong"})
+
+    assert response.status_code == 401
+
+
+def test_whatsapp_webhook_accepts_valid_token(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setattr(whatsapp, "WEBHOOK_VERIFY_TOKEN", "super-secret")
+
+    payload = {
+        "instance": "BookingAgent",
+        "webhook": "http://example.com",
+        "event": "messages.update",
+        "data": {"messages": []},
+    }
+
+    response = client.post("/whatsapp/webhook", json=payload, headers={"x-webhook-token": "super-secret"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ignored"
